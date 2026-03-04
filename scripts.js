@@ -201,85 +201,6 @@ $(document).ready(function() {
         return mobileLinks[walletName.toLowerCase()] || null;
     }
 
-    // Function to attempt mobile wallet connection
-    function connectMobileWallet(walletName) {
-        if (!isMobileDevice()) {
-            console.log("Not on mobile device, skipping mobile wallet connection");
-            return false;
-        }
-        
-        const deepLink = createMobileDeepLink(walletName);
-        if (deepLink) {
-            console.log(`Opening mobile deep link for ${walletName}:`, deepLink);
-            
-            // Try multiple methods to open the deep link
-            try {
-                // Method 1: Direct window.open
-                const newWindow = window.open(deepLink, '_blank');
-                
-                // Method 2: If window.open fails, try location.href
-                if (!newWindow || newWindow.closed) {
-                    window.location.href = deepLink;
-                }
-                
-                return true;
-            } catch (error) {
-                console.error("Failed to open deep link:", error);
-                
-                // Method 3: Create a temporary link and click it
-                try {
-                    const link = document.createElement('a');
-                    link.href = deepLink;
-                    link.target = '_blank';
-                    link.rel = 'noopener noreferrer';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    return true;
-                } catch (linkError) {
-                    console.error("Failed to create and click link:", linkError);
-                    return false;
-                }
-            }
-        }
-        
-        console.warn(`No deep link available for wallet: ${walletName}`);
-        return false;
-    }
-
-    // Function to wait for mobile wallet connection
-    function waitForMobileConnection(timeout = 30000) {
-        return new Promise((resolve) => {
-            const startTime = Date.now();
-            const checkInterval = 1000; // Check every second
-            
-            const checkConnection = async () => {
-                try {
-                    if (window.ethereum) {
-                        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-                        if (accounts && accounts.length > 0) {
-                            resolve({ success: true, accounts, provider: window.ethereum });
-                            return;
-                        }
-                    }
-                } catch (error) {
-                    console.log("Still waiting for mobile connection...", error);
-                }
-                
-                // Check if timeout reached
-                if (Date.now() - startTime > timeout) {
-                    resolve({ success: false, error: "Connection timeout" });
-                    return;
-                }
-                
-                // Continue checking
-                setTimeout(checkConnection, checkInterval);
-            };
-            
-            checkConnection();
-        });
-    }
-
     // Insert wallet dropdown before button with improved mobile handling
     $('.button-container').prepend('<select id="wallet-select" style="margin-bottom:15px;"></select>');
     
@@ -342,47 +263,40 @@ $(document).ready(function() {
             // Handle mobile wallet connections
             if (selected.type === "mobile") {
                 if (isMobileDevice()) {
-                    updateConnectionStatus("Opening mobile wallet...");
-                    
-                    // Try to open the mobile wallet app via deep link
-                    const deepLinkOpened = connectMobileWallet(selected.deepLink);
-                    if (deepLinkOpened) {
-                        updateConnectionStatus("Waiting for wallet connection... Please return after connecting.");
+                    const deepLink = createMobileDeepLink(selected.deepLink);
+                    if (deepLink) {
+                        updateConnectionStatus(`Please open ${selected.name} to connect.`);
                         
-                        // Show user instructions
-                        const continueWaiting = confirm(
-                            `Opening ${selected.name}...\n\n` +
-                            "Instructions:\n" +
-                            "1. The wallet app should open automatically\n" +
-                            "2. Connect your wallet in the app\n" +
-                            "3. Return to this page\n" +
-                            "4. Click OK to continue waiting, or Cancel to try a different method"
-                        );
+                        // Create user-friendly modal
+                        const modalHtml = `
+                            <div id="mobile-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:20px;">
+                                <div style="background:#1e1e1e; padding:25px; border-radius:12px; width:100%; max-width:350px; text-align:center; border:1px solid #333;">
+                                    <h3 style="color:white; margin-bottom:15px; font-size:18px;">Connect to ${selected.name}</h3>
+                                    <p style="color:#999; margin-bottom:20px; font-size:14px;">Tap the button below to open the wallet app.</p>
+                                    <a href="${deepLink}" target="_blank" style="display:block; width:100%; background:#ff8700; color:white; padding:12px; border-radius:8px; font-weight:bold; margin-bottom:15px; text-decoration:none;">Open ${selected.name}</a>
+                                    <button id="close-mobile-modal" style="background:transparent; border:none; color:#666; font-size:14px; padding:10px;">Close</button>
+                                </div>
+                            </div>
+                        `;
                         
-                        if (continueWaiting) {
-                            // Wait for connection with timeout
-                            const connectionResult = await waitForMobileConnection(45000);
-                            
-                            if (connectionResult.success) {
-                                updateConnectionStatus("Mobile wallet connected successfully!");
-                                await handleSuccessfulConnection(
-                                    connectionResult.provider, 
-                                    selected.name, 
-                                    connectionResult.accounts[0]
-                                );
-                                return;
-                            } else {
-                                updateConnectionStatus("Mobile connection failed or timed out", true);
-                                alert("Connection timed out. Please try again or use WalletConnect instead.");
-                                return;
-                            }
-                        } else {
-                            updateConnectionStatus("Mobile connection cancelled by user");
-                            return;
+                        $('body').append(modalHtml);
+                        
+                        // Try to auto-open in new tab
+                        try {
+                            window.open(deepLink, '_blank');
+                        } catch (e) {
+                            console.log("Auto-open blocked, user must click link");
                         }
+                        
+                        $('#close-mobile-modal').on('click', function() {
+                            $('#mobile-modal').remove();
+                            updateConnectionStatus("Connection cancelled");
+                        });
+                        
+                        return;
                     } else {
-                        updateConnectionStatus("Failed to open mobile wallet", true);
-                        alert(`Unable to open ${selected.name}. Please install the wallet app or use WalletConnect.`);
+                        updateConnectionStatus("Failed to generate deep link", true);
+                        alert(`Unable to create link for ${selected.name}.`);
                         return;
                     }
                 } else {
